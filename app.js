@@ -35,40 +35,106 @@ const conn = mongoose.createConnection(mongoURI);
 // Init GFS
 let gfs;
 conn.once("open", () => {
-	// init the grid stream
-	gfs = GridFSStream(conn.db, mongoose.mongo);
-	// specify the collection name
-	gfs.collection("uploads"); // uploads.chunks and uploads.files
+  // init the grid stream
+  gfs = GridFSStream(conn.db, mongoose.mongo);
+  // specify the collection name
+  gfs.collection("uploads"); // uploads.chunks and uploads.files
 });
 
 // create storage engine
 const storage = new GridFSStorage({
-	url: mongoURI,
-	file: (req, file) => {
-		return new Promise((resolve, reject) => {
-			crypto.randomBytes(16, (err, buf) => {
-				if (err) {
-					return reject(err);
-				}
-				const filename = buf.toString("hex") + path.extname(file.originalname);
-				const fileInfo = {
-					filename: filename,
-					bucketName: "uploads",
-				};
-				resolve(fileInfo);
-			});
-		});
-	},
+  url: mongoURI,
+  file: (req, file) => {
+    return new Promise((resolve, reject) => {
+      crypto.randomBytes(16, (err, buf) => {
+        if (err) {
+          return reject(err);
+        }
+        const filename = buf.toString("hex") + path.extname(file.originalname);
+        const fileInfo = {
+          filename: filename,
+          bucketName: "uploads",
+        };
+        resolve(fileInfo);
+      });
+    });
+  },
 });
 
 const upload = multer({ storage });
 
 app.get("/", (req, res) => {
-	res.status(200).render("index");
+  // load all the images
+  gfs.files.find().toArray((err, files) => {
+    if (!files || files.length === 0) {
+      return res.render("index", { files: false });
+    } else {
+      files.map((file) => {
+        if (
+          file.contentType === "image/jpeg" ||
+          file.contentType === "image/png" ||
+          file.contentType === "image/jpg"
+        ) {
+          file.isImage = true;
+        } else {
+          file.isImage = false;
+        }
+      });
+      res.status(200).render("index", { files: files });
+    }
+  });
 });
 
 app.post("/uploads", upload.single("file"), (req, res) => {
-	res.json({ file: req.file });
+  res.json({ file: req.file });
+});
+
+app.get("/files", (req, res) => {
+  // using gridfs stream here
+  // same as the model.find in mongoose
+  gfs.files.find().toArray((err, files) => {
+    // check if files exist
+    if (!files || files.length === 0) {
+      return res.status(404).json({ err: "No files found" });
+    }
+    res.status(200).json(files);
+  });
+});
+
+// find a single file
+// DOESN'T FIND SHIT WHEN SEARCHING BY ID???
+app.get("/files/:filename", (req, res) => {
+  // using gridfs stream here
+  // same as the model.find in mongoose
+  gfs.files.findOne({ filename: req.params.filename }, (err, file) => {
+    console.log(file);
+    if (!file || file.length === 0) {
+      return res.status(404).json({ err: "No file found" });
+    }
+    res.status(200).json(file);
+  });
+});
+
+// read the output of the image
+app.get("/image/:filename", (req, res) => {
+  // using gridfs stream here
+  // same as the model.find in mongoose
+  gfs.files.findOne({ filename: req.params.filename }, (err, file) => {
+    if (!file || file.length === 0) {
+      return res.status(404).json({ err: "No file found" });
+    }
+
+    if (
+      file.contentType === "image/jpeg" ||
+      file.contentType === "image/jpg" ||
+      file.contentType === "image/png"
+    ) {
+      const readStream = gfs.createReadStream(file.filename);
+      readStream.pipe(res);
+    } else {
+      res.status(404).json({ err: "Not an image" });
+    }
+  });
 });
 
 module.exports = app;
