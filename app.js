@@ -34,10 +34,18 @@ const conn = mongoose.createConnection(mongoURI);
 
 // Init GFS
 let gfs;
+
+// deprecation warning
+let gridFSBucket;
+
 conn.once("open", () => {
   // init the grid stream
   gfs = GridFSStream(conn.db, mongoose.mongo);
   // specify the collection name
+  gridFSBucket = new mongoose.mongo.GridFSBucket(conn.db, {
+    bucketName: "uploads",
+  });
+
   gfs.collection("uploads"); // uploads.chunks and uploads.files
 });
 
@@ -65,7 +73,7 @@ const upload = multer({ storage });
 
 app.get("/", (req, res) => {
   // load all the images
-  gfs.files.find().toArray((err, files) => {
+  gfs.files.find({}).toArray((err, files) => {
     if (!files || files.length === 0) {
       return res.render("index", { files: false });
     } else {
@@ -103,37 +111,59 @@ app.get("/files", (req, res) => {
 
 // find a single file
 // DOESN'T FIND SHIT WHEN SEARCHING BY ID???
-app.get("/files/:filename", (req, res) => {
+app.get("/files/:fileID", (req, res) => {
   // using gridfs stream here
   // same as the model.find in mongoose
-  gfs.files.findOne({ filename: req.params.filename }, (err, file) => {
-    console.log(file);
-    if (!file || file.length === 0) {
-      return res.status(404).json({ err: "No file found" });
-    }
-    res.status(200).json(file);
-  });
+  gfs.files.findOne(
+    { _id: mongoose.Types.ObjectId(req.params.fileID) },
+    (err, file) => {
+      if (!file || file.length === 0) {
+        return res.status(404).json({ err: "No file found" });
+      }
+      res.status(200).json(file);
+    },
+  );
 });
 
 // read the output of the image
-app.get("/image/:filename", (req, res) => {
+app.get("/image/:fileID", (req, res) => {
   // using gridfs stream here
   // same as the model.find in mongoose
-  gfs.files.findOne({ filename: req.params.filename }, (err, file) => {
-    if (!file || file.length === 0) {
-      return res.status(404).json({ err: "No file found" });
-    }
+  gfs.files.findOne(
+    { _id: mongoose.Types.ObjectId(req.params.fileID) },
+    (err, file) => {
+      if (!file || file.length === 0) {
+        return res.status(404).json({ err: "No file found" });
+      }
 
-    if (
-      file.contentType === "image/jpeg" ||
-      file.contentType === "image/jpg" ||
-      file.contentType === "image/png"
-    ) {
-      const readStream = gfs.createReadStream(file.filename);
-      readStream.pipe(res);
-    } else {
-      res.status(404).json({ err: "Not an image" });
-    }
+      if (
+        file.contentType === "image/jpeg" ||
+        file.contentType === "image/jpg" ||
+        file.contentType === "image/png"
+      ) {
+        // old decprecated way
+        // const readStream = gfs.createReadStream(file._id);
+
+        // nice, new, modern way :) 
+        const readStream = gridFSBucket.openDownloadStream(file._id);
+
+        readStream.pipe(res);
+      } else {
+        res.status(404).json({ err: "Not an image" });
+      }
+    },
+  );
+
+  app.delete("/files/:fileID", (req, res) => {
+    gfs.deleteOne(
+      { _id: mongoose.Types.ObjectId(req.params.fileID), root: "uploads" },
+      (err, file) => {
+        if (err) {
+          return res.status(404).json(err);
+        }
+        res.redirect("/");
+      },
+    );
   });
 });
 

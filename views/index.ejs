@@ -43,10 +43,18 @@
 					<% files.forEach((file) => { %>
 						<div class="card card-body mb-3">
 							<% if (file.isImage) { %>
-								<img src="image/<%= file.filename %>" style="width: 100%;">
+								<img src="image/<%= file._id %>" style="width: 100%;">
 							<% } else { %>
-								<%= file.filename %>
+								<%= file._id %>
 							<% } %>
+							<!-- METHOD OVERRIDE HELL YEAH -->
+							<!-- VERI IMPORTNT -->
+							<!-- cause form only "allows" POST and GET -->
+							<!-- we can override it with ?_method=<method_type> -->
+							<!-- AMAZING -->
+							<form action="/files/<%= file._id %>?_method=DELETE" method="POST">
+								<button class="btn btn-danger btn-block mt-4">Delete</button>
+							</form>
 						</div>
 					<% }) %> 
 				<% } else { %>
